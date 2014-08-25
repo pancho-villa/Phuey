@@ -212,8 +212,6 @@ if __name__ == "__main__":
     args = arg_parser.parse_args()
     bridge_ip = args.bridge
     user = args.user
-    bridge_ip = "192.168.0.102"
-    user = "23c05db12a8212d7c359e528b19f0b"
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler(stdout)
     ch.setLevel(logging.DEBUG)
