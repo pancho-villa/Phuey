@@ -77,11 +77,11 @@ class HueDescriptor:
                                                           val))
         if self.__name__ is 'state':
             self.logger.debug("__name__ is state!")
-            input("what now?")
             for key, value in val.items():
                 logger.debug('{} {}'.format(inst.__dict__.keys(), key))
                 inst.__dict__[key] = value
             inst._req(inst.state_uri, val, "PUT")
+            return
         if self.__name__ is not 'light_id':
             self.logger.debug("self.__name__ is not light_id")
             self.logger.debug("val: {}".format(val))
