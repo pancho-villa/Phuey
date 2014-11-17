@@ -13,13 +13,27 @@ import urllib.request
 
 logger = logging.getLogger(__name__)
 
+error_codes = {1: "Unauthorized User",
+              2: "Invalid JSON",
+              3: "Resource not available",
+              4: "Method not available for resource",
+              5: "Missing parameters in body",
+              6: "Parameter not available",
+              7: "Invalid value for parameter",
+              8: "Parameter not available",
+              9: "Parameter is modifiable",
+              11: "Too many items in list",
+              12: "Portal connection required",
+              901: "Internal error"}
 
 class HueObject:
     def __init__(self, ip, username):
         self.ip = ip
-        self.base_uri = "http://" + ip + "/api/" + username
+        self.create_user_url = "http://" + ip + "/api"
+        self.base_uri = self.create_user_url + "/" + username
         self.user = username
         self.logger = logging.getLogger(__name__ + ".HueObject")
+        self.device_type = 'phuey'
 
     def _req(self, url, payload=None, meth="GET"):
         self.logger.debug("{} on {}".format(meth, url, payload))
@@ -28,25 +42,39 @@ class HueObject:
             self.logger.debug("Body: {}".format(payload))
             request = urllib.request.Request(url, body, method=meth)
         else:
-
             request = urllib.request.Request(url)
         try:
             response = urllib.request.urlopen(request)
         except urllib.error.URLError as ue:
-            self.logger.error("Couldn't connect to bridge reason: {}".format(
+            self.logger.critical("Couldn't connect to bridge reason: {}".format(
                                                                     ue.reason))
-            return None
+            exit()
         except ConnectionRefusedError:
-            self.logger.error("Connection refused from bridge!")
-            return None
+            self.logger.critical("Connection refused from bridge!")
+            exit()
         else:
             self.logger.debug("Bridge header response: %s" %
                               response.getheaders())
             resp_payload = response.read().decode("utf-8")
             self.logger.debug("Bridge response: %s" % resp_payload)
             payload = json.loads(resp_payload)
-            self.logger.debug(payload)
-            return payload
+            if isinstance(payload, list) and payload[0]['error']['type'] == 1:
+                self.logger.error(error_codes[1])
+                self.logger.info("Press the hub button!")
+                self.logger.info("30 seconds until ")
+                self.authorize()
+            elif isinstance(payload, list) and payload[0]['error']['type'] == 101:
+                self.logger.error("Press the goddamned button!")
+                print("you have 30 seconds to press the button on the hub!")
+#                 time.sleep(1)
+                self.authorize()
+            else:
+                return payload
+
+    def authorize(self):
+        auth_payload = {'devicetype': self.device_type, 'username': self.user}
+        self.logger.debug(auth_payload)
+        self._req(self.create_user_url, auth_payload, "POST")
 
     def __str__(self):
         if isinstance(self, Light):
@@ -146,8 +174,11 @@ class Bridge(HueObject):
     def __init__(self, ip, user):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Bridge")
-        self.uri = self.base_uri
-        lights_dict = self._req(self.uri)
+        try:
+            lights_dict = self._req(self.base_uri)
+        except KeyError as ke:
+            self.logger.error(ke)
+            lights_dict = self._req(self.base_uri)
         self.name = lights_dict['config']['name']
         self.lights = {}
         self.logger.debug(self.__dict__)
@@ -219,5 +250,6 @@ if __name__ == "__main__":
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
-
+    bridge_ip = '192.168.1.250'
+    user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)

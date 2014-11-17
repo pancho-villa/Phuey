@@ -12,7 +12,7 @@ logger = logging.getLogger()
 def command_interpreter(command):
     python_dict = {}
     commands = command.split(',')
-    for c in commands:
+    for c in commands
         k, v = c.split('=')
         if v.lower() == "true":
             v = True
