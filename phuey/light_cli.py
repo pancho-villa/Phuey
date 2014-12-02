@@ -3,7 +3,7 @@ import argparse
 import json
 import logging
 
-from phuey import Bridge, Light
+from .phuey import Bridge, Light
 
 
 logger = logging.getLogger()
