@@ -345,7 +345,7 @@ if __name__ == "__main__":
     user = args.user
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler(stdout)
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.DEBUG)
     fmt = '%(name)s - %(asctime)s - %(module)s-%(funcName)s/%(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
@@ -353,9 +353,6 @@ if __name__ == "__main__":
     bridge_ip = '192.168.1.116'
     user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)
-    import random
-#     g = Group(bridge_ip, user, 0)
-#     for light in sorted(b.lights):
-#         light.effect = None
-    s = Scene(bridge_ip, user)
-    print(s)
+
+    for light in sorted(b.lights):
+        print(light)
