@@ -15,7 +15,8 @@ if (major, minor) == (2, 7):
         import httplib as http_client
     except ImportError as ie:
         print(ie, file=sys.stderr)
-        print("Error httplib not found in python: {}.{}".format(major, minor))
+        print("Error httplib not found in this version: {}.{}".format(major,
+                                                                      minor))
 elif major >= 3:
     import http.client as http_client
 
@@ -24,19 +25,6 @@ logger = logging.getLogger(__name__)
 
 def get_version():
     return version
-
-error_codes = {1:  "Unauthorized User",
-              2:   "Invalid JSON",
-              3:   "Resource not available",
-              4:   "Method not available for resource",
-              5:   "Missing parameters in body",
-              6:   "Parameter not available",
-              7:   "Invalid value for parameter",
-              8:   "Parameter not available",
-              9:   "Parameter is modifiable",
-              11:  "Too many items in list",
-              12:  "Portal connection required",
-              901: "Internal error"}
 
 class HueObject:
     def __init__(self, ip, username):
@@ -207,6 +195,7 @@ class Light(HueObject):
 
 class Group(HueObject):
     scene = HueDescriptor('scene', None)
+    state = HueDescriptor('state', None)
     def __init__(self, ip, user, name, light_list, allow_dupes=False):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Group")
@@ -220,8 +209,8 @@ class Group(HueObject):
             if name == v["name"]:
                 if not allow_dupes:
                     same = "Found group {} with the same name".format(k)
-                    self.logger.warning(same)
-                    self.logger.info("Group not created")
+                    self.logger.debug(same)
+                    self.logger.debug("Group not created")
                     self.get_id_uri(None, int(k))
                     found = True
                     break
@@ -242,7 +231,7 @@ class Group(HueObject):
         if group_id:
             self.id = group_id
         self.uri = self.create_uri + "/" + str(self.id)
-
+        self.state_uri = self.uri + "/action"
 
     def validate_light_list(self, light_list):
         for i, item in enumerate(light_list):
@@ -355,7 +344,7 @@ if __name__ == "__main__":
     bridge_ip = args.bridge
     user = args.user
     logger.setLevel(logging.DEBUG)
-    ch = logging.StreamHandler(stdout)
+    ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     fmt = '%(name)s - %(asctime)s - %(module)s-%(funcName)s/%(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
@@ -364,6 +353,9 @@ if __name__ == "__main__":
     bridge_ip = '192.168.1.116'
     user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)
-
+    
     for light in sorted(b.lights):
         print(light)
+
+    g = Group(bridge_ip, user, 'bathroom', [2, 10, 11])
+    g.state = {"on": False}
