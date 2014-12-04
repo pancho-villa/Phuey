@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
-from sys import stdout
 import argparse
 import hashlib
-import http.client
 import json
 import logging
 import socket
+import sys
+import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 
+
+major, minor, micro, release_level, serial = sys.version_info
+if (major, minor) == (2, 7):
+    try:
+        import httplib as http_client
+    except ImportError as ie:
+        print(ie, file=sys.stderr)
+        print("Error httplib not found in python: {}.{}".format(major, minor))
+elif major >= 3:
+    import http.client as http_client
+
+version = 1.0
 logger = logging.getLogger(__name__)
+
+def get_version():
+    return version
 
 error_codes = {1:  "Unauthorized User",
               2:   "Invalid JSON",
@@ -29,7 +41,7 @@ error_codes = {1:  "Unauthorized User",
 class HueObject:
     def __init__(self, ip, username):
         self.ip = ip
-        self.create_user_url = "http://" + ip + "/api"
+        self.create_user_url = "/api"
         self.base_uri = self.create_user_url + "/" + username
         self.user = username
         self.logger = logging.getLogger(__name__ + ".HueObject")
@@ -37,28 +49,27 @@ class HueObject:
 
     def _req(self, url, payload=None, meth="GET"):
         self.logger.debug("{} on {}".format(meth, url, payload))
-        body = json.dumps(payload).encode()
+        connection = http_client.HTTPConnection(self.ip, 80, timeout=3)
+        body = None
         if payload:
+            body = json.dumps(payload).encode()
             self.logger.debug("Body: {}".format(payload))
-            request = urllib.request.Request(url, body, method=meth)
-        else:
-            request = urllib.request.Request(url, method=meth)
+        ct = {"Content-type": "application/json"}
+        connection.request(meth, url, body, ct)
         try:
-            response = urllib.request.urlopen(request)
-        except urllib.error.URLError as ue:
-            self.logger.critical("Couldn't connect to bridge reason: {}".format(
-                                                                    ue.reason))
-            self.logger.error(ue.code)
-            exit()
+            response = connection.getresponse()
         except ConnectionRefusedError:
             self.logger.critical("Connection refused from bridge!")
             exit()
         else:
-            self.logger.debug("Bridge header response: %s" %
-                              response.getheaders())
+            if response.status >= 400:
+                self.logger.error(response.reason)
+                raise ValueError("Invalid server response")
+            self.logger.debug("Bridge header response: {}".format(
+                                                      response.getheaders()))
             self.logger.debug("status: {}".format(response.status))
             resp_payload = response.read().decode("utf-8")
-            self.logger.debug("Bridge response: %s" % resp_payload)
+            self.logger.debug("Bridge response: {}".format(resp_payload))
             payload = self.error_check_response(resp_payload)
             return payload
 
