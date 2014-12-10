@@ -14,7 +14,7 @@ if (major, minor) == (2, 7):
     try:
         import httplib as http_client
     except ImportError as ie:
-        print(ie, file=sys.stderr)
+        print(ie)
         print("Error httplib not found in this version: {}.{}".format(major,
                                                                       minor))
 elif major >= 3:
@@ -108,7 +108,19 @@ class HueDescriptor:
     def __get__(self, inst, cls):
         self.logger.debug("calling get on {}".format(type(inst)))
         self.logger.debug("{} keys".format(inst.__dict__.keys()))
-        return inst.__dict__[self.__name__]
+        if cls is Light or cls is Group:
+            self.logger.debug("is a {}".format(cls))
+            return inst._req(inst.get_state_uri, None, "GET")
+        else:
+            self.logger.debug(cls)
+     
+        try:
+            return inst.__dict__[self.__name__]
+        except KeyError as ke:
+            msg = "{} not a valid read parameter for {}".format(ke, inst)
+            return msg
+
+            
 
     def __set__(self, inst, val):
         dbg_msg = "calling set on: {} from: {} to: {} ".format(self.__name__,
@@ -167,19 +179,23 @@ class Light(HueObject):
     effect = HueDescriptor('effect', None)
     state = HueDescriptor('state', None)
     transitiontime = HueDescriptor('transitiontime', None)
+    reachable = HueDescriptor('reachable', None)
 
-    def __init__(self, ip, username, light_id, name, start_state=None):
+    def __init__(self, ip, username, light_id, name, model, start_state=None):
         super().__init__(ip, username)
         self.light_id = light_id
+        self.modelid = model 
+#         self.reachable = reachable
         self.name = HueDescriptor('name', name)
         self.logger = logging.getLogger(__name__ + ".Light")
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
+        self.get_state_uri = self.name_uri
         self.state_uri = self.name_uri + "/state"
         if start_state:
             self.logger.debug(type(start_state))
             self.logger.debug(start_state)
             for key, value in json.loads(start_state).items():
-                self.logger.debug("Setting {} with {}".format(key, value))
+#                 self.logger.debug("Setting {} with {}".format(key, value))
                 self.__dict__[key] = value
         self.__dict__['transitiontime'] = 4
 
@@ -231,6 +247,7 @@ class Group(HueObject):
         if group_id:
             self.id = group_id
         self.uri = self.create_uri + "/" + str(self.id)
+        self.get_state_uri = self.uri
         self.state_uri = self.uri + "/action"
 
     def validate_light_list(self, light_list):
@@ -281,16 +298,13 @@ class Bridge(HueObject):
         self.logger.debug(self.__dict__)
         for key, value in lights_dict['lights'].items():
             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-            if str(key).isdigit():
-                state = json.dumps(value['state'])
-                name = value['name']
-                light = Light(ip, user, int(key), name, state)
-                self.logger.debug("Created this light: {}".format(light))
-                self.__dict__[key] = light
-                self.lights.append(light)
-            else:
-                self.logger.debug("Whawt?!")
-                self.logger.debug(str(key).isdigit())
+            state = json.dumps(value['state'])
+            name = value['name']
+            model = value['modelid']
+            light = Light(ip, user, int(key), name, model, state)
+            self.logger.debug("Created this light: {}".format(light))
+            self.__dict__[key] = light
+            self.lights.append(light)
         self.logger.debug("all lights in bridge: {}".format(self.__dict__))
 
     def __len__(self):
@@ -353,9 +367,8 @@ if __name__ == "__main__":
     bridge_ip = '192.168.1.116'
     user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)
-    
-    for light in sorted(b.lights):
-        print(light)
 
-    g = Group(bridge_ip, user, 'bathroom', [2, 10, 11])
-    g.state = {"on": False}
+    for light in sorted(b.lights):
+        print(light.state)
+#     bath_lights = Group(bridge_ip, user, 'bathroom', [2, 10, 11])
+#     print(bath_lights.state)
