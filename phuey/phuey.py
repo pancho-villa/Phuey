@@ -263,6 +263,10 @@ class Group(HueObject):
             except KeyError as ke:
                 self.logger.error(ke)                
  
+    def set_scene(self, scene_id):
+        body = {'scene': scene_id}
+        self._req(self.state_uri, body, "PUT")
+ 
     def get_id_uri(self, bridge_response=None, group_id=None):
         if bridge_response:
             resp = bridge_response[0]['success']['id']
@@ -388,7 +392,7 @@ if __name__ == "__main__":
     user = args.user
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.DEBUG)
     fmt = '%(name)s - %(asctime)s - %(module)s-%(funcName)s/%(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
@@ -397,8 +401,11 @@ if __name__ == "__main__":
     user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)
     #don't use 10, 11, or 12
+    ll = [1,2,3,4,5,6,7,8,9,10,11,12]
+    g = Group(bridge_ip, user, 'all', ll)
+    print(g.set_scene('a0c079f34-off-0'))
+#     print(g.scene)
     
-    s = Scene(bridge_ip, user)
     #all on = abd679d7a-on-0
     #all off = a0c079f34-off-0
-    print(s.scenes)
+    
