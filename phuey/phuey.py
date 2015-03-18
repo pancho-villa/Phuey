@@ -5,10 +5,11 @@ import json
 import logging
 import socket
 import sys
-import sys
 import time
 
 
+
+__version__ = "1.0.1"
 major, minor, micro, release_level, serial = sys.version_info
 if (major, minor) == (2, 7):
     try:
@@ -20,11 +21,10 @@ if (major, minor) == (2, 7):
 elif major >= 3:
     import http.client as http_client
 
-version = 1.0
 logger = logging.getLogger(__name__)
 
 def get_version():
-    return version
+    return __version__
 
 class HueObject:
     def __init__(self, ip, username):
@@ -61,6 +61,15 @@ class HueObject:
             payload = self.error_check_response(resp_payload)
             return payload
 
+    def find_new_lights(self):
+        add_light_url = self.base_uri + "/lights"
+        resp = self._req(add_light_url, None, "POST")
+        result_code, message = list(resp[0].keys()), list(resp[0].values())
+        if result_code == 'success':
+            logger.info(message[0]['/lights'])
+        else:
+            logger.error(message[0]) 
+
     def error_check_response(self, non_json_payload):
         payload = json.loads(non_json_payload)
         if isinstance(payload, list) and 'error' in payload[0]:
@@ -95,8 +104,11 @@ class HueObject:
         if isinstance(self, Light):
             return "Light id: {} name: {} currently on: {}".format(
                                self.light_id, str(self.name), self.on)
+        elif isinstance(self, Scene):
+            return "Scenes: {}".format(self.scenes)
         else:
-            return 'Bazinga!'
+            logger.error("HueObject can't coerce the repr method for your object")
+            return 'ERROR'
 
 
 class HueDescriptor:
@@ -185,7 +197,6 @@ class Light(HueObject):
         super().__init__(ip, username)
         self.light_id = light_id
         self.modelid = model 
-#         self.reachable = reachable
         self.name = HueDescriptor('name', name)
         self.logger = logging.getLogger(__name__ + ".Light")
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
@@ -207,6 +218,19 @@ class Light(HueObject):
 
     def __eq__(self, other):
         return not self.light_id < other and not other.light_id < self.light_id
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            self.logger.debug("returning by key: {}".format(key))
+            for dict_key, value in self.__dict__.items():
+                logger.debug(value)
+                logger.debug(type(value))
+                if key.lower() == dict_key.lower():
+                    return value
+#             return "Can't find light by id or name of {}".format(key)
+#         else:
+#             self.logger.debug('returning by light id')
+#             return self._get_light_by_id(key)
 
 
 class Group(HueObject):
@@ -276,12 +300,17 @@ class Group(HueObject):
 
 
 class Scene(HueObject):
-    def __init__(self, ip, user):
-        super().__init__(ip, user)
+    def __init__(self, ip=None, user=None, bridge=None):
+        if bridge:
+            super().__init__(bridge.ip, bridge.user)
+        elif ip is not None and user is not None:
+            super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Scene")
         self.create_uri = self.base_uri + "/scenes"
         self.scenes = self._req(self.create_uri)
 
+    def get_all(self):
+        return self.scenes
             
 class Bridge(HueObject):
     def __init__(self, ip, user):
@@ -359,7 +388,7 @@ if __name__ == "__main__":
     user = args.user
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(logging.INFO)
     fmt = '%(name)s - %(asctime)s - %(module)s-%(funcName)s/%(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
@@ -367,8 +396,9 @@ if __name__ == "__main__":
     bridge_ip = '192.168.1.116'
     user = '23c05db12a8212d7c359e528b19f0b'
     b = Bridge(bridge_ip, user)
-
-    for light in sorted(b.lights):
-        print(light.state)
-#     bath_lights = Group(bridge_ip, user, 'bathroom', [2, 10, 11])
-#     print(bath_lights.state)
+    #don't use 10, 11, or 12
+    
+    s = Scene(bridge_ip, user)
+    #all on = abd679d7a-on-0
+    #all off = a0c079f34-off-0
+    print(s.scenes)
