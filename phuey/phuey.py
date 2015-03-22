@@ -98,7 +98,12 @@ class HueObject:
             self.logger.debug(type(self))
             return "Scenes: {}".format(self.scenes)
         elif isinstance(self, Group):
-            return "Group: {}".format(self.name)
+            groups = []
+            for key, value in self.__dict__.items():
+                if key.isdigit():
+                    groups.append(key)
+                    
+            return "Group IDs: {}".format(sorted(groups))
 
     def __repr__(self):
         if isinstance(self, Light):
@@ -120,9 +125,11 @@ class HueDescriptor:
     def __get__(self, inst, cls):
         self.logger.debug("calling get on {}".format(type(inst)))
         self.logger.debug("{} keys".format(inst.__dict__.keys()))
-        if cls is Light or cls is Group:
-            self.logger.debug("is a {}".format(cls))
+        self.logger.debug("is a {}".format(cls))
+        if cls is Light:
             return inst._req(inst.get_state_uri, None, "GET")
+        elif cls is Group:
+            return inst._req(inst.uri, None, "GET")
         else:
             self.logger.debug(cls)
      
@@ -164,6 +171,9 @@ class HueDescriptor:
                                                               inst.state_uri))
                     inst._req(inst.state_uri, {self.__name__: val}, "PUT")
 
+            elif isinstance(inst, Group):
+                payload = {self.__name__: val}
+                inst._req(inst.state_uri, payload, "PUT")
             else:
                 self.logger.debug("How the fuck did I get here?")
                 self.logger.debug("type of {} is {}".format(inst, type(inst)))
@@ -206,7 +216,6 @@ class Light(HueObject):
             self.logger.debug(type(start_state))
             self.logger.debug(start_state)
             for key, value in json.loads(start_state).items():
-#                 self.logger.debug("Setting {} with {}".format(key, value))
                 self.__dict__[key] = value
         self.__dict__['transitiontime'] = 4
 
@@ -234,62 +243,26 @@ class Light(HueObject):
 
 
 class Group(HueObject):
-    scene = HueDescriptor('scene', None)
+    on = HueDescriptor('on', None)
+    bri = HueDescriptor('bri', None)
+    xy = HueDescriptor('xy', None)
+    ct = HueDescriptor('ct', None)
+    sat = HueDescriptor('sat', None)
+    hue = HueDescriptor('hue', None)
+    alert = HueDescriptor('alert', None)
+    effect = HueDescriptor('effect', None)
     state = HueDescriptor('state', None)
-    def __init__(self, ip, user, name, light_list, allow_dupes=False):
+    transitiontime = HueDescriptor('transitiontime', None)
+    reachable = HueDescriptor('reachable', None)
+    def __init__(self, ip, user, group_id):
         super().__init__(ip, user)
+        self.group_id = group_id
         self.logger = logging.getLogger(__name__ + ".Group")
-        self.name = name
-        self.lights = self.validate_light_list(light_list)
         self.create_uri = self.base_uri + "/groups"
-        payload = {"lights": self.lights, "name": name}
-        cached = self._req(self.create_uri)
-        found = False
-        for k, v in cached.items():
-            if name == v["name"]:
-                if not allow_dupes:
-                    same = "Found group {} with the same name".format(k)
-                    self.logger.debug(same)
-                    self.logger.debug("Group not created")
-                    self.get_id_uri(None, int(k))
-                    found = True
-                    break
-                else:
-                    self._req(self.uri, payload, "POST")
-        if not found:
-            bridge_response = self._req(self.create_uri, payload, "POST")
-            try:
-                self.get_id_uri(bridge_response)
-            except KeyError as ke:
-                self.logger.error(ke)                
- 
-    def set_scene(self, scene_id):
-        body = {'scene': scene_id}
-        self._req(self.state_uri, body, "PUT")
- 
-    def get_id_uri(self, bridge_response=None, group_id=None):
-        if bridge_response:
-            resp = bridge_response[0]['success']['id']
-            self.logger.debug(resp)
-            self.id = int(resp.split("/")[2])
-        if group_id:
-            self.id = group_id
-        self.uri = self.create_uri + "/" + str(self.id)
-        self.get_state_uri = self.uri
+        self.uri = self.create_uri + "/" + str(self.group_id)
         self.state_uri = self.uri + "/action"
 
-    def validate_light_list(self, light_list):
-        for i, item in enumerate(light_list):
-            self.logger.debug(item)
-            if type(item) is not str and type(item) is int:
-                light_list[i] = str(item)
-                self.logger.debug("Mutating {}".format(item))
-            else:
-                self.logger.error("Wrong type in the light list")
-        self.logger.debug(light_list)
-        return light_list
-
-    def remove(self):
+    def remove(self, group_id):
         response = self._req(self.uri, None, "DELETE")
         try:
             message = response[0]['success']
@@ -299,22 +272,15 @@ class Group(HueObject):
             self.logger.error(te)
             self.logger.error("Received empty response from server")
         else:
-            self.logger.info("Group name {} id {} deleted".format(self.name,
-                                                                  self.id))
-
+            self.logger.info("Group id {} deleted".format(group_id))
+       
 
 class Scene(HueObject):
-    def __init__(self, ip=None, user=None, bridge=None):
-        if bridge:
-            super().__init__(bridge.ip, bridge.user)
-        elif ip is not None and user is not None:
-            super().__init__(ip, user)
+    def __init__(self, ip, user):
+        super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Scene")
         self.create_uri = self.base_uri + "/scenes"
-        self.scenes = self._req(self.create_uri)
-
-    def get_all(self):
-        return self.scenes
+        self.all = self._req(self.create_uri)
             
 class Bridge(HueObject):
     def __init__(self, ip, user):
@@ -393,19 +359,12 @@ if __name__ == "__main__":
     logger.setLevel(logging.DEBUG)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
-    fmt = '%(name)s - %(asctime)s - %(module)s-%(funcName)s/%(lineno)d - %(message)s'
+    fmt = '%(levelname)s %(name)s - %(asctime)s - %(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
     bridge_ip = '192.168.1.116'
     user = '23c05db12a8212d7c359e528b19f0b'
-    b = Bridge(bridge_ip, user)
-    #don't use 10, 11, or 12
-    ll = [1,2,3,4,5,6,7,8,9,10,11,12]
-    g = Group(bridge_ip, user, 'all', ll)
-    print(g.set_scene('a0c079f34-off-0'))
-#     print(g.scene)
-    
-    #all on = abd679d7a-on-0
-    #all off = a0c079f34-off-0
-    
+#     b = Bridge(bridge_ip, user)
+    g = Group(bridge_ip, user, 0)
+    g.on = True   
