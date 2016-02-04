@@ -1,30 +1,47 @@
 #!/usr/bin/env python3
 import argparse
-import hashlib
 import json
 import logging
-import socket
 import sys
-import time
-
-
 
 __version__ = "1.0.1"
-major, minor, micro, release_level, serial = sys.version_info
-if (major, minor) == (2, 7):
+
+logger = logging.getLogger('phuey')
+
+major, minor = sys.version_info[0:2]
+if (major, minor) == (2, 6) or (major, minor) == (2, 7):
     try:
         import httplib as http_client
     except ImportError as ie:
-        print(ie)
-        print("Error httplib not found in this version: {}.{}".format(major,
-                                                                      minor))
+        logger.error(ie)
+        msg = "Error httplib not found in this version: {}.{}"
+        logger.critical(msg.format(major, minor))
+        raise ImportError
+elif major == 2 and minor < 6:
+    raise RuntimeError("Not supported on Python versions older than 2.6")
 elif major >= 3:
     import http.client as http_client
 
-logger = logging.getLogger(__name__)
 
 def get_version():
     return __version__
+
+
+def get_args():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('--bridge', '-b', metavar="BRIDGEIPADDRESS")
+    arg_parser.add_argument('--user', '-u', metavar="USERNAME")
+    arg_parser.add_argument('--verbose', '-v', action="store_true",
+                            default=False)
+    args = arg_parser.parse_args()
+    bridge_ip = args.bridge
+    user = args.user
+    if args.verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    return bridge_ip, user, log_level
+
 
 class HueObject:
     def __init__(self, ip, username):
@@ -68,7 +85,7 @@ class HueObject:
         if result_code == 'success':
             logger.info(message[0]['/lights'])
         else:
-            logger.error(message[0]) 
+            logger.error(message[0])
 
     def error_check_response(self, non_json_payload):
         payload = json.loads(non_json_payload)
@@ -96,13 +113,13 @@ class HueObject:
                                                       len(self.lights))
         elif isinstance(self, Scene):
             self.logger.debug(type(self))
-            return "Scenes: {}".format(self.scenes)
+            return "Scenes: {}".format(self.all)
         elif isinstance(self, Group):
             groups = []
-            for key, value in self.__dict__.items():
+            for key, _ in self.__dict__.items():
                 if key.isdigit():
                     groups.append(key)
-                    
+
             return "Group IDs: {}".format(sorted(groups))
 
     def __repr__(self):
@@ -110,9 +127,10 @@ class HueObject:
             return "Light id: {} name: {} currently on: {}".format(
                                self.light_id, str(self.name), self.on)
         elif isinstance(self, Scene):
-            return "Scenes: {}".format(self.scenes)
+            return "Scenes: {}".format(self.all)
         else:
-            logger.error("HueObject can't coerce the repr method for your object")
+            msg = "HueObject can't coerce the repr method for your object"
+            logger.error(msg)
             return 'ERROR'
 
 
@@ -132,14 +150,12 @@ class HueDescriptor:
             return inst._req(inst.uri, None, "GET")
         else:
             self.logger.debug(cls)
-     
+
         try:
             return inst.__dict__[self.__name__]
         except KeyError as ke:
             msg = "{} not a valid read parameter for {}".format(ke, inst)
             return msg
-
-            
 
     def __set__(self, inst, val):
         dbg_msg = "calling set on: {} from: {} to: {} ".format(self.__name__,
@@ -161,7 +177,7 @@ class HueDescriptor:
                 self.logger.debug(inst.__dict__.keys())
                 self.logger.debug(type(inst))
                 if (inst.__dict__[self.__name__] is not None or
-                inst.__dict__[self.__name__] is not "None"):
+                        inst.__dict__[self.__name__] is not "None"):
                     self.logger.debug("self.__name__ is {}".format(
                                                                self.__name__))
                     input('press enter to continue...')
@@ -206,7 +222,7 @@ class Light(HueObject):
     def __init__(self, ip, username, light_id, name, model, start_state=None):
         super().__init__(ip, username)
         self.light_id = light_id
-        self.modelid = model 
+        self.modelid = model
         self.name = HueDescriptor('name', name)
         self.logger = logging.getLogger(__name__ + ".Light")
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
@@ -236,10 +252,6 @@ class Light(HueObject):
                 logger.debug(type(value))
                 if key.lower() == dict_key.lower():
                     return value
-#             return "Can't find light by id or name of {}".format(key)
-#         else:
-#             self.logger.debug('returning by light id')
-#             return self._get_light_by_id(key)
 
 
 class Group(HueObject):
@@ -254,6 +266,7 @@ class Group(HueObject):
     state = HueDescriptor('state', None)
     transitiontime = HueDescriptor('transitiontime', None)
     reachable = HueDescriptor('reachable', None)
+
     def __init__(self, ip, user, group_id):
         super().__init__(ip, user)
         self.group_id = group_id
@@ -265,7 +278,7 @@ class Group(HueObject):
     def remove(self, group_id):
         response = self._req(self.uri, None, "DELETE")
         try:
-            message = response[0]['success']
+            _ = response[0]['success']
         except KeyError as ke:
             self.logger.error(ke)
         except TypeError as te:
@@ -273,15 +286,24 @@ class Group(HueObject):
             self.logger.error("Received empty response from server")
         else:
             self.logger.info("Group id {} deleted".format(group_id))
-       
+
 
 class Scene(HueObject):
-    def __init__(self, ip, user):
+    def __init__(self, ip, user, scene_id):
         super().__init__(ip, user)
+        self.scene_id = scene_id
         self.logger = logging.getLogger(__name__ + ".Scene")
         self.create_uri = self.base_uri + "/scenes"
         self.all = self._req(self.create_uri)
-            
+        self.__dict__ = {k: v for k, v in self.all.items()}
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+
 class Bridge(HueObject):
     def __init__(self, ip, user):
         super().__init__(ip, user)
@@ -329,13 +351,14 @@ class Bridge(HueObject):
         self.logger.debug("calling setitem with {}:{}".format(key, value))
         self.logger.debug("setting item with {}".format(type(value)))
         if (isinstance(key, str) or isinstance(key, int)) and isinstance(value,
-                                                                        int):
+                                                                         int):
             self.logger.debug('key is string and value is int!')
             self.lights[key] = value
         elif (isinstance(key, str) or isinstance(key, int) and
               isinstance(value, dict)):
             if key.lower != "state":
-                raise ValueError("Can't set any attribute but state with a dictionary")
+                msg = "Can't set any attribute but state with a dictionary"
+                raise ValueError(msg)
             self.logger.debug("what? it should go off here!")
             self.logger.debug(value)
             self.logger.debug(key)
@@ -350,21 +373,11 @@ class Bridge(HueObject):
 
 
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--bridge', '-b', metavar="BRIDGEIPADDRESS")
-    arg_parser.add_argument('--user', '-u', metavar="USERNAME")
-    args = arg_parser.parse_args()
-    bridge_ip = args.bridge
-    user = args.user
-    logger.setLevel(logging.DEBUG)
+    bridge_ip, user, log_level = get_args()
+    logger.setLevel(log_level)
     ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(log_level)
     fmt = '%(levelname)s %(name)s - %(asctime)s - %(lineno)d - %(message)s'
     formatter = logging.Formatter(fmt)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
-    bridge_ip = '192.168.1.116'
-    user = '23c05db12a8212d7c359e528b19f0b'
-#     b = Bridge(bridge_ip, user)
-    g = Group(bridge_ip, user, 0)
-    g.on = True   
