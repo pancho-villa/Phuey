@@ -5,10 +5,8 @@ Created on Jan 31, 2016
 '''
 import sys
 import unittest
-import logging
 
 from phuey import phuey
-
 
 class PhueyTest(unittest.TestCase):
 
@@ -19,20 +17,20 @@ class PhueyTest(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_create_scene(self):
-        scene = phuey.Scene(self.ip, self.user, 'testy')
-        body = {"name":"test scene", "lights":["1","2", "3"]}
+#     def test_create_scene(self):
+#         scene = phuey.Scene(self.ip, self.user, 'testy')
+#         body = {"name":"test scene", "lights":["1","2", "3"]}
 
-    def test_create_group(self):
-        group = phuey.Group(self.ip, self.user, 11)
+#     def test_create_group(self):
+#         group = phuey.Group(self.ip, self.user, 11)
 
-    def test_create_light(self):
-        light = phuey.Light(self.ip, self.user, None, None, None)
+#     def test_create_light(self):
+#         light = phuey.Light(self.ip, self.user, None, None, None)
 #         print(light)
 
     def test_create_Bridge(self):
         bridge = phuey.Bridge(self.ip, self.user)
-        print(bridge)
+        
 
 
 if __name__ == "__main__":

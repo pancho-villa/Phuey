@@ -5,6 +5,7 @@ import logging
 import sys
 
 __version__ = "1.0.1"
+__updated__ = "2016-02-10" 
 
 logger = logging.getLogger('phuey')
 
@@ -142,15 +143,6 @@ class HueDescriptor:
 
     def __get__(self, inst, cls):
         self.logger.debug("calling get on {}".format(type(inst)))
-        self.logger.debug("{} keys".format(inst.__dict__.keys()))
-        self.logger.debug("is a {}".format(cls))
-        if cls is Light:
-            return inst._req(inst.get_state_uri, None, "GET")
-        elif cls is Group:
-            return inst._req(inst.uri, None, "GET")
-        else:
-            self.logger.debug(cls)
-
         try:
             return inst.__dict__[self.__name__]
         except KeyError as ke:
@@ -164,7 +156,6 @@ class HueDescriptor:
         if val is None:
             val = "none"
         if self.__name__ is 'state':
-            self.logger.debug("__name__ is state!")
             for key, value in val.items():
                 logger.debug('{} {}'.format(inst.__dict__.keys(), key))
                 inst.__dict__[key] = value
@@ -174,8 +165,6 @@ class HueDescriptor:
             self.logger.debug("val: {}".format(val))
             if isinstance(inst, Light) and self.__name__ == "name":
                 self.logger.debug("{} {}".format(val, type(val)))
-                self.logger.debug(inst.__dict__.keys())
-                self.logger.debug(type(inst))
                 if (inst.__dict__[self.__name__] is not None or
                         inst.__dict__[self.__name__] is not "None"):
                     self.logger.debug("self.__name__ is {}".format(
@@ -194,7 +183,6 @@ class HueDescriptor:
                 self.logger.debug("How the fuck did I get here?")
                 self.logger.debug("type of {} is {}".format(inst, type(inst)))
                 self.logger.debug(self.__name__)
-                quit(0)
 
         else:
             self.logger.debug("{} {} {}".format(self.__name__, self.name, val))
@@ -294,14 +282,16 @@ class Scene(HueObject):
         self.scene_id = scene_id
         self.logger = logging.getLogger(__name__ + ".Scene")
         self.create_uri = self.base_uri + "/scenes"
-        self.all = self._req(self.create_uri)
-        self.__dict__ = {k: v for k, v in self.all.items()}
+        self.__dict__ = {k: v for k, v in self._req(self.create_uri).items()}
 
     def __len__(self):
         return len(self.__dict__)
 
     def __getitem__(self, key):
         return self.__dict__[key]
+
+    def __setitem__(self):
+        pass
 
 
 class Bridge(HueObject):
