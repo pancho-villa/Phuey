@@ -104,15 +104,20 @@ class HueObject:
         self._req(self.create_user_url, auth_payload, "POST")
 
     def __str__(self):
+        import pdb
+        pdb.set_trace()
         if isinstance(self, Light):
-            return "Light id: {} name: {} currently on: {}".format(
+            if self.on:
+                return "Light id: {} name: {} currently on: {}".format(
                                self.light_id, str(self.name), self.on)
+            else:
+                return "Light id: {} name: {} currently on: {}".format(
+                               self.light_id, str(self.name), "unknown")
         elif isinstance(self, Bridge):
             self.logger.debug(type(self))
             return "name: {} with {} light(s)".format(self.name,
                                                       len(self.lights))
         elif isinstance(self, Scene):
-            self.logger.debug(type(self))
             return "Scenes: {}".format(self.all)
         elif isinstance(self, Group):
             groups = []
@@ -141,21 +146,16 @@ class HueDescriptor:
         self.logger = logging.getLogger(__name__ + ".HueDescriptor")
 
     def __get__(self, inst, cls):
-        self.logger.debug("calling get on {}".format(type(inst)))
-        self.logger.debug("{} keys".format(inst.__dict__.keys()))
-        self.logger.debug("is a {}".format(cls))
-        if cls is Light:
-            return inst._req(inst.get_state_uri, None, "GET")
-        elif cls is Group:
-            return inst._req(inst.uri, None, "GET")
-        else:
-            self.logger.debug(cls)
-
+        self.logger.debug("calling get on {} of {} type".format(inst, cls))
         try:
             return inst.__dict__[self.__name__]
         except KeyError as ke:
             msg = "{} not a valid read parameter for {}".format(ke, inst)
-            return msg
+            logger.error(msg)
+            logger.debug(inst.__dict__)
+            print("POOOOOOOOOOOOOOP")
+            input("")
+            raise KeyError
 
     def __set__(self, inst, val):
         dbg_msg = "calling set on: {} from: {} to: {} ".format(self.__name__,
@@ -245,6 +245,7 @@ class Light(HueObject):
         return not self.light_id < other and not other.light_id < self.light_id
 
     def __getitem__(self, key):
+        self.logger.debug("calling __getitem__ on {}".format(self.__inst__))
         if isinstance(key, str):
             self.logger.debug("returning by key: {}".format(key))
             for dict_key, value in self.__dict__.items():
@@ -289,7 +290,7 @@ class Group(HueObject):
 
 
 class Scene(HueObject):
-    def __init__(self, ip, user, scene_id):
+    def __init__(self, ip, user, scene_id=None):
         super().__init__(ip, user)
         self.scene_id = scene_id
         self.logger = logging.getLogger(__name__ + ".Scene")
