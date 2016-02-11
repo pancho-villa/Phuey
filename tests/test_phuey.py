@@ -6,6 +6,7 @@ Created on Jan 31, 2016
 import sys
 import unittest
 import logging
+import json
 
 from phuey import phuey
 
@@ -35,10 +36,13 @@ class PhueyTest(unittest.TestCase):
 #     def test_create_group(self):
 #         group = phuey.Group(self.ip, self.user, 11)
 #
-    def test_create_light(self):
-
-        light = phuey.Light(self.ip, self.user, 3, 'butt', 123, None)
-        light.on = False
+    def test_create_light_without_state(self):
+        """creation should fail sine there isn't a state being passed in"""
+        start_state = json.dumps({'on': False})
+        try:
+            light = phuey.Light(self.ip, self.user, 3, 'butt', 123, start_state)
+        except Exception as exc:
+            self.logger.error(exc)
 
 #     def test_create_Bridge(self):
 #         bridge = phuey.Bridge(self.ip, self.user)

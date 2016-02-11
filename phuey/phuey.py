@@ -104,15 +104,9 @@ class HueObject:
         self._req(self.create_user_url, auth_payload, "POST")
 
     def __str__(self):
-        import pdb
-        pdb.set_trace()
         if isinstance(self, Light):
-            if self.on:
-                return "Light id: {} name: {} currently on: {}".format(
-                               self.light_id, str(self.name), self.on)
-            else:
-                return "Light id: {} name: {} currently on: {}".format(
-                               self.light_id, str(self.name), "unknown")
+            return "Light id: {} name: {}".format(
+                               self.light_id, str(self.name))
         elif isinstance(self, Bridge):
             self.logger.debug(type(self))
             return "name: {} with {} light(s)".format(self.name,
@@ -219,21 +213,21 @@ class Light(HueObject):
     transitiontime = HueDescriptor('transitiontime', None)
     reachable = HueDescriptor('reachable', None)
 
-    def __init__(self, ip, username, light_id, name, model, start_state=None):
+    def __init__(self, ip, username, light_id=None, name=None, model=None,
+                 start_state=None):
+        self.logger = logging.getLogger(__name__ + ".Light")
         super().__init__(ip, username)
+        for item in [light_id, name, model, start_state]:
+            if item is None:
+                self._req()
         self.light_id = light_id
         self.modelid = model
         self.name = HueDescriptor('name', name)
-        self.logger = logging.getLogger(__name__ + ".Light")
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
         self.get_state_uri = self.name_uri
         self.state_uri = self.name_uri + "/state"
-        if start_state:
-            self.logger.debug(type(start_state))
-            self.logger.debug(start_state)
-            for key, value in json.loads(start_state).items():
-                self.__dict__[key] = value
-        self.__dict__['transitiontime'] = 4
+        for key, value in json.loads(start_state).items():
+            self.__dict__[key] = value
 
     def __gt__(self, other):
         return self.light_id > other.light_id
