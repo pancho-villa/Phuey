@@ -5,7 +5,7 @@ import logging
 import sys
 
 __version__ = "1.0.1"
-
+__updated__ = "2016-02-12"
 logger = logging.getLogger('phuey')
 
 major, minor = sys.version_info[0:2]
@@ -53,7 +53,7 @@ class HueObject:
         self.device_type = 'phuey'
 
     def _req(self, url, payload=None, meth="GET"):
-        self.logger.debug("{} on {}".format(meth, url, payload))
+        self.logger.debug("HTTP {} on {}".format(meth, url, payload))
         connection = http_client.HTTPConnection(self.ip, 80, timeout=3)
         body = None
         if payload:
@@ -92,9 +92,10 @@ class HueObject:
         if isinstance(payload, list) and 'error' in payload[0]:
             description = payload[0]['error']['description']
             self.logger.error(description)
-            if isinstance(self, Light) and 'off' not in description:
+            self.logger.error(payload)
+            if isinstance(self, ZigbeeLight):
                 self.logger.warning("Is this a Link or Lux bulb?")
-                self.logger.error("Can't change this parameter!")
+                raise AttributeError(description)
         else:
             return payload
 
@@ -104,7 +105,7 @@ class HueObject:
         self._req(self.create_user_url, auth_payload, "POST")
 
     def __str__(self):
-        if isinstance(self, Light):
+        if isinstance(self, ZigbeeLight):
             return "Light id: {} name: {}".format(
                                self.light_id, str(self.name))
         elif isinstance(self, Bridge):
@@ -122,7 +123,7 @@ class HueObject:
             return "Group IDs: {}".format(sorted(groups))
 
     def __repr__(self):
-        if isinstance(self, Light):
+        if isinstance(self, ZigbeeLight):
             return "Light id: {} name: {} currently on: {}".format(
                                self.light_id, str(self.name), self.on)
         elif isinstance(self, Scene):
@@ -135,9 +136,11 @@ class HueObject:
 
 class HueDescriptor:
     def __init__(self, name, initval):
+        self.logger = logging.getLogger(__name__ + ".HueDescriptor")
+        self.logger.debug("{} is self.name".format(initval))
+        self.logger.debug("{} is self.__name__".format(name))
         self.name = initval
         self.__name__ = name
-        self.logger = logging.getLogger(__name__ + ".HueDescriptor")
 
     def __get__(self, inst, cls):
         self.logger.debug("calling get on {} of {} type".format(inst, cls))
@@ -145,10 +148,9 @@ class HueDescriptor:
             return inst.__dict__[self.__name__]
         except KeyError as ke:
             msg = "{} not a valid read parameter for {}".format(ke, inst)
-            logger.error(msg)
-            logger.debug(inst.__dict__)
-            print("POOOOOOOOOOOOOOP")
-            input("")
+            self.logger.error(msg)
+            self.logger.debug(inst.__dict__)
+            self.logger.error("POOOOOOOOOOOOOOP")
             raise KeyError
 
     def __set__(self, inst, val):
@@ -166,16 +168,14 @@ class HueDescriptor:
             return
         if self.__name__ is not 'light_id':
             self.logger.debug("val: {}".format(val))
-            if isinstance(inst, Light) and self.__name__ == "name":
+            if isinstance(inst, ZigbeeLight) and self.__name__ == "name":
                 self.logger.debug("{} {}".format(val, type(val)))
-                self.logger.debug(inst.__dict__.keys())
-                self.logger.debug(type(inst))
                 if (inst.__dict__[self.__name__] is not None or
                         inst.__dict__[self.__name__] is not "None"):
                     self.logger.debug("self.__name__ is {}".format(
                                                                self.__name__))
                     input('press enter to continue...')
-            elif isinstance(inst, Light) and self.__name__ != "name":
+            elif isinstance(inst, ZigbeeLight) and self.__name__ != "name":
                 if val is not None:
                     self.logger.debug("calling req against: {}".format(
                                                               inst.state_uri))
@@ -188,7 +188,7 @@ class HueDescriptor:
                 self.logger.debug("How the fuck did I get here?")
                 self.logger.debug("type of {} is {}".format(inst, type(inst)))
                 self.logger.debug(self.__name__)
-                quit(0)
+                raise RuntimeError("wtf matey!")
 
         else:
             self.logger.debug("{} {} {}".format(self.__name__, self.name, val))
@@ -200,29 +200,21 @@ class HueDescriptor:
         return self.name
 
 
-class Light(HueObject):
+class ZigbeeLight(HueObject):
+    """Can be a GE Link light or Hue Lux Light"""
     on = HueDescriptor('on', None)
     bri = HueDescriptor('bri', None)
-    xy = HueDescriptor('xy', None)
-    ct = HueDescriptor('ct', None)
-    sat = HueDescriptor('sat', None)
-    hue = HueDescriptor('hue', None)
-    alert = HueDescriptor('alert', None)
-    effect = HueDescriptor('effect', None)
     state = HueDescriptor('state', None)
     transitiontime = HueDescriptor('transitiontime', None)
     reachable = HueDescriptor('reachable', None)
+    name = HueDescriptor('name', None)
 
     def __init__(self, ip, username, light_id=None, name=None, model=None,
                  start_state=None):
-        self.logger = logging.getLogger(__name__ + ".Light")
+        self.logger = logging.getLogger(__name__ + ".ZigbeeLight")
         super().__init__(ip, username)
-        for item in [light_id, name, model, start_state]:
-            if item is None:
-                self._req()
         self.light_id = light_id
         self.modelid = model
-        self.name = HueDescriptor('name', name)
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
         self.get_state_uri = self.name_uri
         self.state_uri = self.name_uri + "/state"
@@ -247,6 +239,28 @@ class Light(HueObject):
                 logger.debug(type(value))
                 if key.lower() == dict_key.lower():
                     return value
+
+
+class HueLight(ZigbeeLight):
+    xy = HueDescriptor('xy', None)
+    ct = HueDescriptor('ct', None)
+    sat = HueDescriptor('sat', None)
+    hue = HueDescriptor('hue', None)
+    alert = HueDescriptor('alert', None)
+    effect = HueDescriptor('effect', None)
+
+    def __init__(self, ip, username, light_id=None, name=None, model=None,
+                 start_state=None):
+        self.logger = logging.getLogger(__name__ + ".HueLight")
+        super().__init__(ip, username, light_id, name, model, start_state)
+        self.light_id = light_id
+        self.modelid = model
+        self.name = HueDescriptor('name', name)
+        self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
+        self.get_state_uri = self.name_uri
+        self.state_uri = self.name_uri + "/state"
+        for key, value in json.loads(start_state).items():
+            self.__dict__[key] = value
 
 
 class Group(HueObject):
@@ -303,12 +317,7 @@ class Bridge(HueObject):
     def __init__(self, ip, user):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Bridge")
-        try:
-            lights_dict = self._req(self.base_uri)
-        except KeyError as ke:
-            self.logger.error(ke)
-            lights_dict = self._req(self.base_uri)
-        self.logger.debug(lights_dict)
+        lights_dict = self._req(self.base_uri)
         self.name = lights_dict['config']['name']
         self.lights = []
         self.logger.debug(self.__dict__)
@@ -317,11 +326,16 @@ class Bridge(HueObject):
             state = json.dumps(value['state'])
             name = value['name']
             model = value['modelid']
-            light = Light(ip, user, int(key), name, model, state)
+#            create proper light class depending on light model
+            if model == 'LCT001':
+                light = HueLight(ip, user, int(key), name, model, state)
+#            lct001 are hue color bulbs, lwb004 are hue white and zll light are
+#            white ge link lights
+            elif model == 'LWB004' or model == 'ZLL Light':
+                light = ZigbeeLight(ip, user, int(key), name, model, state)
             self.logger.debug("Created this light: {}".format(light))
             self.__dict__[key] = light
             self.lights.append(light)
-        self.logger.debug("all lights in bridge: {}".format(self.__dict__))
 
     def __len__(self):
         return len(self.lights)
@@ -330,7 +344,7 @@ class Bridge(HueObject):
         if isinstance(key, str):
             self.logger.debug("returning by key: {}".format(key))
             for value in self.__dict__.values():
-                if isinstance(value, Light):
+                if isinstance(value, ZigbeeLight):
                     self.logger.debug(value)
                     name = str(value.name)
                     if name.lower() == key.lower():
