@@ -3,6 +3,8 @@ import argparse
 import json
 import logging
 import sys
+from mock.mock import self
+from pickle import INST
 
 __version__ = "1.0.1"
 __updated__ = "2016-02-12"
@@ -97,6 +99,7 @@ class HueObject:
                 self.logger.warning("Is this a Link or Lux bulb?")
                 raise AttributeError(description)
         else:
+            logger.debug("No error found in bridge response")
             return payload
 
     def authorize(self):
@@ -115,12 +118,7 @@ class HueObject:
         elif isinstance(self, Scene):
             return "Scenes: {}".format(self.all)
         elif isinstance(self, Group):
-            groups = []
-            for key, _ in self.__dict__.items():
-                if key.isdigit():
-                    groups.append(key)
-
-            return "Group IDs: {}".format(sorted(groups))
+            return "Group attributes: {}".format(self.__dict__)
 
     def __repr__(self):
         if isinstance(self, ZigbeeLight):
@@ -177,13 +175,13 @@ class HueDescriptor:
                     input('press enter to continue...')
             elif isinstance(inst, ZigbeeLight) and self.__name__ != "name":
                 if val is not None:
-                    self.logger.debug("calling req against: {}".format(
-                                                              inst.state_uri))
                     inst._req(inst.state_uri, {self.__name__: val}, "PUT")
 
             elif isinstance(inst, Group):
-                payload = {self.__name__: val}
-                inst._req(inst.state_uri, payload, "PUT")
+                if val is not None and isinstance(val, dict):
+                    if len(val.keys()) > 1:
+                        inst._req(inst.state_uri, val, "PUT")
+                inst._req(inst.state_uri, {self.__name__: val}, "PUT")
             else:
                 self.logger.debug("How the fuck did I get here?")
                 self.logger.debug("type of {} is {}".format(inst, type(inst)))
@@ -203,11 +201,15 @@ class HueDescriptor:
 class ZigbeeLight(HueObject):
     """Can be a GE Link light or Hue Lux Light"""
     on = HueDescriptor('on', None)
+    xy = HueDescriptor('xy', None)
+    ct = HueDescriptor('ct', None)
     bri = HueDescriptor('bri', None)
+    sat = HueDescriptor('sat', None)
+    hue = HueDescriptor('hue', None)
     state = HueDescriptor('state', None)
+    alert = HueDescriptor('alert', None)
+    effect = HueDescriptor('effect', None)
     transitiontime = HueDescriptor('transitiontime', None)
-    reachable = HueDescriptor('reachable', None)
-    name = HueDescriptor('name', None)
 
     def __init__(self, ip, username, light_id=None, name=None, model=None,
                  start_state=None):
@@ -216,8 +218,9 @@ class ZigbeeLight(HueObject):
         self.light_id = light_id
         self.modelid = model
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
-        self.get_state_uri = self.name_uri
+#         self.get_state_uri = self.name_uri
         self.state_uri = self.name_uri + "/state"
+        self.name = HueDescriptor('name', name)
         for key, value in json.loads(start_state).items():
             self.__dict__[key] = value
 
@@ -242,47 +245,38 @@ class ZigbeeLight(HueObject):
 
 
 class HueLight(ZigbeeLight):
-    xy = HueDescriptor('xy', None)
-    ct = HueDescriptor('ct', None)
-    sat = HueDescriptor('sat', None)
-    hue = HueDescriptor('hue', None)
-    alert = HueDescriptor('alert', None)
-    effect = HueDescriptor('effect', None)
 
     def __init__(self, ip, username, light_id=None, name=None, model=None,
                  start_state=None):
         self.logger = logging.getLogger(__name__ + ".HueLight")
         super().__init__(ip, username, light_id, name, model, start_state)
-        self.light_id = light_id
-        self.modelid = model
-        self.name = HueDescriptor('name', name)
-        self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
-        self.get_state_uri = self.name_uri
-        self.state_uri = self.name_uri + "/state"
-        for key, value in json.loads(start_state).items():
-            self.__dict__[key] = value
 
 
 class Group(HueObject):
     on = HueDescriptor('on', None)
-    bri = HueDescriptor('bri', None)
     xy = HueDescriptor('xy', None)
     ct = HueDescriptor('ct', None)
+    bri = HueDescriptor('bri', None)
     sat = HueDescriptor('sat', None)
     hue = HueDescriptor('hue', None)
+    state = HueDescriptor('state', None)
     alert = HueDescriptor('alert', None)
     effect = HueDescriptor('effect', None)
-    state = HueDescriptor('state', None)
     transitiontime = HueDescriptor('transitiontime', None)
-    reachable = HueDescriptor('reachable', None)
 
-    def __init__(self, ip, user, group_id):
+    def __init__(self, ip, user, group_id=None, attributes=None):
         super().__init__(ip, user)
-        self.group_id = group_id
         self.logger = logging.getLogger(__name__ + ".Group")
         self.create_uri = self.base_uri + "/groups"
-        self.uri = self.create_uri + "/" + str(self.group_id)
-        self.state_uri = self.uri + "/action"
+        if not group_id and attributes:
+            group_data = self._req(self.create_uri, attributes, "POST")
+            self.group_id = group_data[0]['success']['id']
+        elif not attributes and group_id:
+            self.group_id = group_id
+        self.name_uri = self.create_uri + "/" + str(self.group_id)
+        self.state_uri = self.name_uri + "/action"
+        for key, value in self._req(self.name_uri)['action'].items():
+            self.__dict__[key] = value
 
     def remove(self, group_id):
         response = self._req(self.uri, None, "DELETE")
@@ -368,10 +362,6 @@ class Bridge(HueObject):
             if key.lower != "state":
                 msg = "Can't set any attribute but state with a dictionary"
                 raise ValueError(msg)
-            self.logger.debug("what? it should go off here!")
-            self.logger.debug(value)
-            self.logger.debug(key)
-            self.lights[key] = value
         else:
             self._get_light_by_id(key)
 

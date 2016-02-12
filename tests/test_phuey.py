@@ -27,6 +27,7 @@ class PhueyTest(unittest.TestCase):
         self.ip = '192.168.1.250'
         self.user = '23c05db12a8212d7c359e528b19f0b'
         self.bridge = phuey.Bridge(self.ip, self.user)
+        self.group_attrs = {'name': 'test groupie!'}
 
     def test_change_colormode_on_LCT001(self):
         """change light colormode and verifies it returns correct colormode"""
@@ -43,12 +44,31 @@ class PhueyTest(unittest.TestCase):
                         light.xy = [0.1691, 0.0441]
                     self.assertEqual(light.colormode, mode)
 
-    def test_change_colormode_on_non_LCT001_models(self):
-        """changing light colormode on white only bulbs should fail"""
+    def test_change_colormode_on_non_LCT001_models_using_state(self):
+        """changing light colormode on white only bulbs using state should
+        fail"""
         for light in self.bridge.lights:
             if light.modelid != "LCT001":
                 with self.assertRaises(AttributeError):
-                    light.ct = 500
+                    light.state = {'ct': 500}
+
+    def test_change_colormode_on_non_LCT001_models_using_attribute(self):
+        """changing light colormode on white only bulbs using color mode should
+        fail"""
+        for light in self.bridge.lights:
+            if light.modelid != "LCT001":
+                with self.assertRaises(AttributeError):
+                    light.hue = 1
+
+    def test_create_existing_group(self):
+        """create a group using an id in use and change it"""
+        g = phuey.Group(self.ip, self.user, 14)
+        g.on = True
+        g.bri = 254
+        g.hue = 1
+
+#     def test_change_existing_light(self):
+#         pass
 
 if __name__ == "__main__":
     unittest.main()
