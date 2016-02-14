@@ -8,8 +8,7 @@ import logging
 import sys
 import phuey
 
-from unittest.mock import patch
-from http.client import HTTPConnection
+from unittest.mock import patch, MagicMock
 
 __updated__ = "2016-02-13"
 
@@ -26,8 +25,8 @@ logger.addHandler(ch)
 class PhueyTest(unittest.TestCase):
 
     def setUp(self):
-        self.ip = '192.168.1.250'
-        self.user = '23c05db12a8212d7c359e528b19f0b'
+        self.ip = 'ip'
+        self.user = 'user'
 #         self.bridge = phuey.Bridge(self.ip, self.user)
         self.group_attrs = {'name': 'test groupie!'}
 
@@ -62,12 +61,12 @@ class PhueyTest(unittest.TestCase):
 #                 with self.assertRaises(AttributeError):
 #                     light.hue = 1
 
-    @patch('phuey.http_client.HTTPResponse')
-    def test_create_existing_group(self, mock_response):
-        """create a group using an id not in use """
-        mock_bridge_resp = b'[{"error":{"type":3,"address":"/groups/15","description":"resource, /groups/15, not available"}}]'
-        mock_response.return_value.get_response.return_value.status.return_value = 200
-        mock_response.return_value.get_response.return_value.read.return_value = mock_bridge_resp
+    @patch('phuey.http_client.HTTPConnection')
+    def test_use_existing_group(self, mock_conn):
+        """use a group using an id not in use """
+        mock_bridge_resp = '[{"error":{"type":3,"address":"/groups/15","description":"resource, /groups/15, not available"}}]'
+        mock_conn.return_value.getresponse.return_value = MagicMock(status=200)
+        mock_conn.return_value.getresponse.return_value.read.return_value = MagicMock(mock_bridge_resp)
         with self.assertRaises(AttributeError):
             g = phuey.Group(self.ip, self.user, 15)
             g.on = True

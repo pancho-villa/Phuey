@@ -70,7 +70,9 @@ class HueObject:
         else:
 #             import pdb
 #             pdb.set_trace()
-
+            logger.debug(type(response))
+            logger.debug(response.status)
+            logger.debug(response)
             if response.status >= 400:
                 self.logger.error(response.reason)
                 raise ValueError("Invalid server response")
