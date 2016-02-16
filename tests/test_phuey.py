@@ -102,6 +102,16 @@ class PhueyTest(unittest.TestCase):
         phuey.Group(self.ip, self.user, attributes=attrs)
         self.mock.assert_any_call()
 
+    def test_bad_request(self):
+        self.mock.return_value.status = 666
+        self.mock.return_value.read = None
+        with self.assertRaises(RuntimeError):
+            phuey.Group(self.ip, self.user, 0)
+
+#     def test_delete_group_0(self):
+#         self.mock.return_value.status = 200
+#         g = phuey.Group(self.ip, self.user, 0)
+#         g.remove()
 
 if __name__ == "__main__":
     unittest.main()

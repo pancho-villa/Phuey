@@ -80,7 +80,7 @@ class HueObject:
             self.logger.debug(response.status)
             if response.status >= 400:
                 self.logger.error(response.reason)
-                raise ValueError("Invalid server response")
+                raise RuntimeError(response.reason)
             self.logger.debug("Bridge header response: {}".format(
                                                       response.getheaders()))
             self.logger.debug("status: {}".format(response.status))
@@ -107,7 +107,6 @@ class HueObject:
             if isinstance(self, HueObject):
                 raise AttributeError(description)
         else:
-            self.logger.info(payload)
             return payload
 
     def authorize(self):
@@ -288,17 +287,20 @@ class Group(HueObject):
         self.logger.debug(self.__dict__)
 
     def remove(self):
-        if self.group_id != 0:
-            response = self._req(self.uri, None, "DELETE")
+        if self.group_id != "0":
+            response = self._req(self.name_uri, None, "DELETE")
             try:
-                _ = response[0]['success']
+                msg = response[0]['success']
             except KeyError as ke:
                 self.logger.error(ke)
+                raise KeyError
             except TypeError as te:
                 self.logger.error(te)
-                self.logger.error("Received empty response from server")
+                raise TypeError(te)
             else:
-                self.logger.info("Group id {} deleted".format(self.group_id))
+                self.logger.info("{}".format(msg))
+        else:
+            self.logger.error("Can't delete group 0!")
 
 
 class Scene(HueObject):
@@ -337,34 +339,34 @@ class Bridge(HueObject):
         for key, value in bridge_dict['groups'].items():
             self.logger.debug("Key: {} Value: {}".format(key, value))
 
-    def _light_iter(self, dict_items):
-        """loops over items in dictionary to return finished object"""
-        for key, value in dict_items['lights'].items():
-            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-            state = json.dumps(value['state'])
-            name = value['name']
-            model = value['modelid']
-            light = Light(ip, user, int(key), name, model, state)
-            self.logger.debug("Created this light: {}".format(light))
-            self.__dict__[key] = light
-            self.lights.append(light)
+#     def _light_iter(self, dict_items):
+#         """loops over items in dictionary to return finished object"""
+#         for key, value in dict_items['lights'].items():
+#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+#             state = json.dumps(value['state'])
+#             name = value['name']
+#             model = value['modelid']
+#             light = Light(ip, user, int(key), name, model, state)
+#             self.logger.debug("Created this light: {}".format(light))
+#             self.__dict__[key] = light
+#             self.lights.append(light)
 
-    def _group_iter(self, dict_items, hue_type):
-        """loops over items in dictionary to return finished object"""
-        for key, value in dict_items['groups'].items():
-            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-            state = json.dumps(value['state'])
-            name = value['name']
-            lights = value['lights']
-            light = Light(ip, user, int(key), name, model, state)
-            self.logger.debug("Created this light: {}".format(light))
-            self.__dict__[key] = light
-            self.lights.append(light)
+#     def _group_iter(self, dict_items, hue_type):
+#         """loops over items in dictionary to return finished object"""
+#         for key, value in dict_items['groups'].items():
+#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+#             state = json.dumps(value['state'])
+#             name = value['name']
+#             lights = value['lights']
+#             light = Light(ip, user, int(key), name, model, state)
+#             self.logger.debug("Created this light: {}".format(light))
+#             self.__dict__[key] = light
+#             self.lights.append(light)
 
-    def _init_attributes(self, dict_items):
-        """initializes lights groups, scenes and timers in the bridge"""
-        for key, value in dict_items.items():
-            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+#     def _init_attributes(self, dict_items):
+#         """initializes lights groups, scenes and timers in the bridge"""
+#         for key, value in dict_items.items():
+#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
 
     def __len__(self):
         return len(self.lights)
