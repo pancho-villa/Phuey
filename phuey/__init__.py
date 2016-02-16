@@ -3,10 +3,11 @@ import argparse
 import json
 import logging
 import sys
-from pdb import Pdb
+from socket import timeout
 
 __version__ = "1.0"
-__updated__ = "2016-02-13"
+__updated__ = "2016-02-16"
+
 logger = logging.getLogger('phuey')
 
 major, minor = sys.version_info[0:2]
@@ -61,18 +62,22 @@ class HueObject:
             body = json.dumps(payload).encode()
             self.logger.debug("Body: {}".format(payload))
         ct = {"Content-type": "application/json"}
-        connection.request(meth, url, body, ct)
         try:
+            connection.request(meth, url, body, ct)
             response = connection.getresponse()
         except ConnectionRefusedError:
             self.logger.critical("Connection refused from bridge!")
-            exit()
+            raise ConnectionRefusedError("Ensure IP address is correct")
+        except timeout as tmo:
+            self.logger.error(tmo)
+            raise TimeoutError("Bridge didn't respond to request")
+        except Exception as ee:
+            self.logger.error(ee)
+            raise RuntimeError(ee)
         else:
-#             import pdb
-#             pdb.set_trace()
-            logger.debug(type(response))
-            logger.debug(response.status)
-            logger.debug(response)
+            self.logger.debug(response)
+            self.logger.debug(type(response))
+            self.logger.debug(response.status)
             if response.status >= 400:
                 self.logger.error(response.reason)
                 raise ValueError("Invalid server response")
@@ -89,9 +94,9 @@ class HueObject:
         resp = self._req(add_light_url, None, "POST")
         result_code, message = list(resp[0].keys()), list(resp[0].values())
         if result_code == 'success':
-            logger.info(message[0]['/lights'])
+            self.logger.info(message[0]['/lights'])
         else:
-            logger.error(message[0])
+            self.logger.error(message[0])
 
     def error_check_response(self, non_json_payload):
         payload = json.loads(non_json_payload)
@@ -102,7 +107,7 @@ class HueObject:
             if isinstance(self, HueObject):
                 raise AttributeError(description)
         else:
-            logger.debug("No error found in bridge response")
+            self.logger.info(payload)
             return payload
 
     def authorize(self):
@@ -131,7 +136,7 @@ class HueObject:
             return "Scenes: {}".format(self.all)
         else:
             msg = "HueObject can't coerce the repr method for your object"
-            logger.error(msg)
+            self.logger.error(msg)
             return 'ERROR'
 
 
@@ -163,7 +168,7 @@ class HueDescriptor:
         if self.__name__ is 'state':
             self.logger.debug("__name__ is state!")
             for key, value in val.items():
-                logger.debug('{} {}'.format(inst.__dict__.keys(), key))
+                self.logger.debug('{} {}'.format(inst.__dict__.keys(), key))
                 inst.__dict__[key] = value
             inst._req(inst.state_uri, val, "PUT")
             return
@@ -245,8 +250,8 @@ class Light(HueObject):
         if isinstance(key, str):
             self.logger.debug("returning by key: {}".format(key))
             for dict_key, value in self.__dict__.items():
-                logger.debug(value)
-                logger.debug(type(value))
+                self.logger.debug(value)
+                self.logger.debug(type(value))
                 if key.lower() == dict_key.lower():
                     return value
 
@@ -268,19 +273,19 @@ class Group(HueObject):
         self.logger = logging.getLogger(__name__ + ".Group")
         self.create_uri = self.base_uri + "/groups"
         if group_id is not None:
-            self.group_id = group_id
+            self.group_id = str(group_id)
         elif not group_id and attributes:
             group_data = self._req(self.create_uri, attributes, "POST")
             self.group_id = group_data[0]['success']['id']
         else:
             ve_msg = "Need either attributes or group id to create group"
             raise ValueError(ve_msg)
-        logger.debug(self.__dict__)
-        self.name_uri = self.create_uri + "/" + str(self.group_id)
+        self.logger.debug(self.__dict__)
+        self.name_uri = self.create_uri + "/" + self.group_id
         self.state_uri = self.name_uri + "/action"
         for key, value in self._req(self.name_uri)['action'].items():
             self.__dict__[key] = value
-        logger.debug(self.__dict__)
+        self.logger.debug(self.__dict__)
 
     def remove(self):
         if self.group_id != 0:
@@ -316,11 +321,11 @@ class Bridge(HueObject):
     def __init__(self, ip, user):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Bridge")
-        lights_dict = self._req(self.base_uri)
-        self.name = lights_dict['config']['name']
+        bridge_dict = self._req(self.base_uri)
+        self.name = bridge_dict['config']['name']
         self.lights = []
         self.logger.debug(self.__dict__)
-        for key, value in lights_dict['lights'].items():
+        for key, value in bridge_dict['lights'].items():
             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
             state = json.dumps(value['state'])
             name = value['name']
@@ -329,6 +334,37 @@ class Bridge(HueObject):
             self.logger.debug("Created this light: {}".format(light))
             self.__dict__[key] = light
             self.lights.append(light)
+        for key, value in bridge_dict['groups'].items():
+            self.logger.debug("Key: {} Value: {}".format(key, value))
+
+    def _light_iter(self, dict_items):
+        """loops over items in dictionary to return finished object"""
+        for key, value in dict_items['lights'].items():
+            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+            state = json.dumps(value['state'])
+            name = value['name']
+            model = value['modelid']
+            light = Light(ip, user, int(key), name, model, state)
+            self.logger.debug("Created this light: {}".format(light))
+            self.__dict__[key] = light
+            self.lights.append(light)
+
+    def _group_iter(self, dict_items, hue_type):
+        """loops over items in dictionary to return finished object"""
+        for key, value in dict_items['groups'].items():
+            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+            state = json.dumps(value['state'])
+            name = value['name']
+            lights = value['lights']
+            light = Light(ip, user, int(key), name, model, state)
+            self.logger.debug("Created this light: {}".format(light))
+            self.__dict__[key] = light
+            self.lights.append(light)
+
+    def _init_attributes(self, dict_items):
+        """initializes lights groups, scenes and timers in the bridge"""
+        for key, value in dict_items.items():
+            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
 
     def __len__(self):
         return len(self.lights)
