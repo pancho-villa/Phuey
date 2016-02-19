@@ -6,7 +6,7 @@ import sys
 from socket import timeout
 
 __version__ = "1.0"
-__updated__ = "2016-02-16"
+__updated__ = "2016-02-17"
 
 logger = logging.getLogger('phuey')
 
@@ -68,35 +68,22 @@ class HueObject:
         except ConnectionRefusedError:
             self.logger.critical("Connection refused from bridge!")
             raise ConnectionRefusedError("Ensure IP address is correct")
-        except timeout as tmo:
-            self.logger.error(tmo)
-            raise TimeoutError("Bridge didn't respond to request")
         except Exception as ee:
             self.logger.error(ee)
             raise RuntimeError(ee)
         else:
             self.logger.debug(response)
             self.logger.debug(type(response))
-            self.logger.debug(response.status)
+            self.logger.debug("status: {}".format(response.status))
             if response.status >= 400:
                 self.logger.error(response.reason)
                 raise RuntimeError(response.reason)
             self.logger.debug("Bridge header response: {}".format(
                                                       response.getheaders()))
-            self.logger.debug("status: {}".format(response.status))
             resp_payload = response.read().decode("utf-8")
             self.logger.debug("Bridge response: {}".format(resp_payload))
             payload = self.error_check_response(resp_payload)
             return payload
-
-    def find_new_lights(self):
-        add_light_url = self.base_uri + "/lights"
-        resp = self._req(add_light_url, None, "POST")
-        result_code, message = list(resp[0].keys()), list(resp[0].values())
-        if result_code == 'success':
-            self.logger.info(message[0]['/lights'])
-        else:
-            self.logger.error(message[0])
 
     def error_check_response(self, non_json_payload):
         payload = json.loads(non_json_payload)
@@ -108,11 +95,6 @@ class HueObject:
                 raise AttributeError(description)
         else:
             return payload
-
-    def authorize(self):
-        auth_payload = {'devicetype': self.device_type, 'username': self.user}
-        self.logger.debug(auth_payload)
-        self._req(self.create_user_url, auth_payload, "POST")
 
     def __str__(self):
         if isinstance(self, Light):
@@ -167,7 +149,6 @@ class HueDescriptor:
         if self.__name__ is 'state':
             self.logger.debug("__name__ is state!")
             for key, value in val.items():
-                self.logger.debug('{} {}'.format(inst.__dict__.keys(), key))
                 inst.__dict__[key] = value
             inst._req(inst.state_uri, val, "PUT")
             return
@@ -196,7 +177,7 @@ class HueDescriptor:
 
         else:
             self.logger.debug("{} {} {}".format(self.__name__, self.name, val))
-            self.logger.debug("{} is None!".format(self.__name__))
+            return
         inst.__dict__[self.__name__] = val
         self.logger.debug(inst.__dict__.keys())
 
@@ -320,9 +301,11 @@ class Scene(HueObject):
 
 
 class Bridge(HueObject):
-    def __init__(self, ip, user):
+    def __init__(self, ip, user, authorize=None):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Bridge")
+        if authorize is not None:
+            self._authorize()
         bridge_dict = self._req(self.base_uri)
         self.name = bridge_dict['config']['name']
         self.lights = []
@@ -406,6 +389,19 @@ class Bridge(HueObject):
         light_id = str(lid)
         self.logger.debug("trying to match against %s" % light_id)
         return self.__dict__.get(light_id)
+
+    def find_new_lights(self):
+        add_light_url = self.base_uri + "/lights"
+        resp = self._req(add_light_url, None, "POST")
+        result_code, message = list(resp[0].keys()), list(resp[0].values())
+        if result_code == 'success':
+            self.logger.info(message[0]['/lights'])
+        else:
+            self.logger.error(message[0])
+
+    def _authorize(self):
+        auth_payload = {'devicetype': self.device_type, 'username': self.user}
+        self._req(self.create_user_url, auth_payload, "POST")
 
 
 if __name__ == "__main__":

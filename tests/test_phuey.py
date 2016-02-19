@@ -108,10 +108,17 @@ class PhueyTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             phuey.Group(self.ip, self.user, 0)
 
-#     def test_delete_group_0(self):
+#     def test_delete_group_zero(self):
 #         self.mock.return_value.status = 200
 #         g = phuey.Group(self.ip, self.user, 0)
 #         g.remove()
+
+    def test_create_bridge_bad_user(self):
+        self.mock.return_value.status = 200
+        self.mock.return_value.read.return_value = bytes('[{"error":{"type":101,"address":"/","description":"link button not pressed"}}]', 'utf-8')
+        with self.assertRaises(AttributeError):
+            phuey.Bridge(self.ip, self.user, True)
+        self.mock.assert_any_call()
 
 if __name__ == "__main__":
     unittest.main()
