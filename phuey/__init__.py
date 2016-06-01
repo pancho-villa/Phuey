@@ -6,9 +6,9 @@ import sys
 from socket import timeout
 
 __version__ = "1.0"
-__updated__ = "2016-02-17"
+__updated__ = "2016-06-01"
 
-logger = logging.getLogger('phuey')
+logger = logging.getLogger()
 
 major, minor = sys.version_info[0:2]
 if (major, minor) == (2, 6) or (major, minor) == (2, 7):
@@ -56,7 +56,7 @@ class HueObject:
 
     def _req(self, url, payload=None, meth="GET"):
         self.logger.debug("HTTP {} on {}".format(meth, url, payload))
-        connection = http_client.HTTPConnection(self.ip, 80, timeout=3)
+        connection = http_client.HTTPConnection(self.ip, 80, timeout=5)
         body = None
         if payload:
             body = json.dumps(payload).encode()
@@ -91,15 +91,13 @@ class HueObject:
             description = payload[0]['error']['description']
             self.logger.error(description)
             self.logger.debug(payload)
-            if isinstance(self, HueObject):
-                raise AttributeError(description)
+            raise AttributeError(description)
         else:
             return payload
 
     def __str__(self):
         if isinstance(self, Light):
-            return "Light id: {} name: {}".format(
-                               self.light_id, str(self.name))
+            return "Light id: {}".format(self.light_id)
         elif isinstance(self, Bridge):
             self.logger.debug(type(self))
             return "name: {} with {} light(s)".format(self.name,
@@ -107,7 +105,11 @@ class HueObject:
         elif isinstance(self, Scene):
             return "Scenes: {}".format(self.all)
         elif isinstance(self, Group):
-            return "Group attributes: {}".format(self.__dict__)
+            return "Group id: {}".format(self.group_id)
+        elif isinstance(self, Sensor):
+            return "Sensor id: {}".format(self.sensor_id)
+        elif isinstance(self, Schedule):
+            return "Sensor id: {}".format(self.Schedule_id)
 
     def __repr__(self):
         if isinstance(self, Light):
@@ -124,21 +126,14 @@ class HueObject:
 class HueDescriptor:
     def __init__(self, name, initval):
         self.logger = logging.getLogger(__name__ + ".HueDescriptor")
-        self.logger.debug("{} is self.name".format(initval))
-        self.logger.debug("{} is self.__name__".format(name))
         self.name = initval
         self.__name__ = name
 
     def __get__(self, inst, cls):
         self.logger.debug("calling get on {} of {} type".format(inst, cls))
-        try:
-            return inst.__dict__[self.__name__]
-        except KeyError as ke:
-            msg = "{} not a valid read parameter for {}".format(ke, inst)
-            self.logger.error(msg)
-            self.logger.debug(inst.__dict__)
-            self.logger.error("POOOOOOOOOOOOOOP")
-            raise KeyError
+        if isinstance(inst, Light):
+            return inst._req(inst.name_uri)[self.__name__]
+        return inst._req(inst.state_uri)['state'][self.__name__]
 
     def __set__(self, inst, val):
         dbg_msg = "calling set on: {} from: {} to: {} ".format(self.__name__,
@@ -155,11 +150,8 @@ class HueDescriptor:
         if self.__name__ is not 'light_id':
             if isinstance(inst, Light) and self.__name__ == "name":
                 self.logger.debug("{} {}".format(val, type(val)))
-                if (inst.__dict__[self.__name__] is not None or
-                        inst.__dict__[self.__name__] is not "None"):
-                    self.logger.debug("self.__name__ is {}".format(
-                                                               self.__name__))
-                    input('press enter to continue...')
+                inst._req(inst.name_uri, {"name": val}, "PUT")
+
             elif isinstance(inst, Light) and self.__name__ != "name":
                 if val is not None:
                     inst._req(inst.state_uri, {self.__name__: val}, "PUT")
@@ -186,7 +178,7 @@ class HueDescriptor:
 
 
 class Light(HueObject):
-    """Can be a GE Link light or Hue Lux Light"""
+    """Any light supported by the Phillips Hue hub"""
     on = HueDescriptor('on', None)
     xy = HueDescriptor('xy', None)
     ct = HueDescriptor('ct', None)
@@ -197,24 +189,15 @@ class Light(HueObject):
     alert = HueDescriptor('alert', None)
     effect = HueDescriptor('effect', None)
     transitiontime = HueDescriptor('transitiontime', None)
+    name = HueDescriptor('name', None)
+    modelid = HueDescriptor('modelid', None)
 
-    def __init__(self, ip, username, light_id, name=None, model=None,
-                 start_state=None):
+    def __init__(self, ip, username, light_id):
         self.logger = logging.getLogger(__name__ + ".Light")
         super().__init__(ip, username)
         self.light_id = light_id
-        self.modelid = model
         self.name_uri = self.base_uri + "/lights/" + str(self.light_id)
-#         self.get_state_uri = self.name_uri
         self.state_uri = self.name_uri + "/state"
-        self.name = HueDescriptor('name', name)
-        if start_state:
-            for key, value in json.loads(start_state).items():
-                self.__dict__[key] = value
-        else:
-            state = self._req(self.name_uri)
-            for key, value in state.items():
-                self.__dict__[key] = value
 
     def __gt__(self, other):
         return self.light_id > other.light_id
@@ -224,16 +207,6 @@ class Light(HueObject):
 
     def __eq__(self, other):
         return not self.light_id < other and not other.light_id < self.light_id
-
-    def __getitem__(self, key):
-        self.logger.debug("calling __getitem__ on {}".format(self.__inst__))
-        if isinstance(key, str):
-            self.logger.debug("returning by key: {}".format(key))
-            for dict_key, value in self.__dict__.items():
-                self.logger.debug(value)
-                self.logger.debug(type(value))
-                if key.lower() == dict_key.lower():
-                    return value
 
 
 class Group(HueObject):
@@ -263,9 +236,6 @@ class Group(HueObject):
         self.logger.debug(self.__dict__)
         self.name_uri = self.create_uri + "/" + self.group_id
         self.state_uri = self.name_uri + "/action"
-        for key, value in self._req(self.name_uri)['action'].items():
-            self.__dict__[key] = value
-        self.logger.debug(self.__dict__)
 
     def remove(self):
         if self.group_id != "0":
@@ -290,8 +260,48 @@ class Scene(HueObject):
         self.scene_id = scene_id
         self.logger = logging.getLogger(__name__ + ".Scene")
         self.create_uri = self.base_uri + "/scenes"
-        self.all = self._req(self.create_uri)
-        self.__dict__ = {k: v for k, v in self.all.items()}
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+
+class Rule(HueObject):
+    def __init__(self, ip, user, rule_id=None):
+        super().__init__(ip, user)
+        self.rule_id = rule_id
+        self.logger = logging.getLogger(__name__ + ".Rule")
+        self.create_uri = self.base_uri + "/rules"
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+
+class Sensor(HueObject):
+    def __init__(self, ip, user, sensor_id=None):
+        super().__init__(ip, user)
+        self.sensor_id = sensor_id
+        self.logger = logging.getLogger(__name__ + ".Sensor")
+        self.create_uri = self.base_uri + "/sensors"
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+
+class Schedule(HueObject):
+    def __init__(self, ip, user, schedule_id=None):
+        super().__init__(ip, user)
+        self.sensor_id = schedule_id
+        self.logger = logging.getLogger(__name__ + ".Schedule")
+        self.create_uri = self.base_uri + "/schedules"
 
     def __len__(self):
         return len(self.__dict__)
@@ -301,108 +311,65 @@ class Scene(HueObject):
 
 
 class Bridge(HueObject):
-    def __init__(self, ip, user, authorize=None):
+    def __init__(self, ip, user=None):
         super().__init__(ip, user)
         self.logger = logging.getLogger(__name__ + ".Bridge")
-        if authorize is not None:
-            self._authorize()
+        if user is None:
+            self.user = self._authorize()
         bridge_dict = self._req(self.base_uri)
         self.name = bridge_dict['config']['name']
-        self.lights = []
-        self.logger.debug(self.__dict__)
-        for key, value in bridge_dict['lights'].items():
-            self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-            state = json.dumps(value['state'])
-            name = value['name']
-            model = value['modelid']
-            light = Light(ip, user, int(key), name, model, state)
-            self.logger.debug("Created this light: {}".format(light))
-            self.__dict__[key] = light
-            self.lights.append(light)
-        for key, value in bridge_dict['groups'].items():
-            self.logger.debug("Key: {} Value: {}".format(key, value))
-
-#     def _light_iter(self, dict_items):
-#         """loops over items in dictionary to return finished object"""
-#         for key, value in dict_items['lights'].items():
-#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-#             state = json.dumps(value['state'])
-#             name = value['name']
-#             model = value['modelid']
-#             light = Light(ip, user, int(key), name, model, state)
-#             self.logger.debug("Created this light: {}".format(light))
-#             self.__dict__[key] = light
-#             self.lights.append(light)
-
-#     def _group_iter(self, dict_items, hue_type):
-#         """loops over items in dictionary to return finished object"""
-#         for key, value in dict_items['groups'].items():
-#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
-#             state = json.dumps(value['state'])
-#             name = value['name']
-#             lights = value['lights']
-#             light = Light(ip, user, int(key), name, model, state)
-#             self.logger.debug("Created this light: {}".format(light))
-#             self.__dict__[key] = light
-#             self.lights.append(light)
-
-#     def _init_attributes(self, dict_items):
-#         """initializes lights groups, scenes and timers in the bridge"""
-#         for key, value in dict_items.items():
-#             self.logger.debug("Key: {} Value: {}".format(key, value['state']))
+        self.lights = [] or self._iter_bridge_items(bridge_dict, 'lights')
+        self.scenes = [] or self._iter_bridge_items(bridge_dict, 'scenes')
+        self.groups = [] or self._iter_bridge_items(bridge_dict, 'groups')
+        self.sensors = [] or self._iter_bridge_items(bridge_dict, 'sensors')
+        self.rules = [] or self._iter_bridge_items(bridge_dict, 'rules')
+        self.schedules = [] or self._iter_bridge_items(bridge_dict,
+                                                       'schedules')
 
     def __len__(self):
         return len(self.lights)
 
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            self.logger.debug("returning by key: {}".format(key))
-            for value in self.__dict__.values():
-                if isinstance(value, Light):
-                    self.logger.debug(value)
-                    name = str(value.name)
-                    if name.lower() == key.lower():
-                        return value
-                else:
-                    self.logger.debug("{} != {}".format(value, key))
-            return "Can't find light by id or name of {}".format(key)
-        else:
-            self.logger.debug('returning by light id')
-            return self._get_light_by_id(key)
+    def _iter_bridge_items(self, bridge_dict, items):
+        results = []
+        for key, value in bridge_dict[items].items():
+            self.logger.debug("Key: {} Value: {}".format(key, value))
+            if items == 'lights':
+                bridge_item = Light(self.ip, self.user, int(key))
+            elif items == 'groups':
+                bridge_item = Group(self.ip, self.user, int(key))
+            elif items == 'scenes':
+                bridge_item = Scene(self.ip, self.user)
+            elif items == 'rules':
+                bridge_item = Rule(self.ip, self.user, int(key))
+            elif items == 'sensors':
+                bridge_item = Sensor(self.ip, self.user, int(key))
+            elif items == 'schedules':
+                bridge_item = Scene(self.ip, self.user)
+            self.logger.debug("Created: {}".format(bridge_item))
+            results.append(bridge_item)
+        return results
 
-    def __setitem__(self, key, value):
-        self.logger.debug("calling setitem with {}:{}".format(key, value))
-        self.logger.debug("setting item with {}".format(type(value)))
-        if (isinstance(key, str) or isinstance(key, int)) and isinstance(value,
-                                                                         int):
-            self.logger.debug('key is string and value is int!')
-            self.lights[key] = value
-        elif (isinstance(key, str) or isinstance(key, int) and
-              isinstance(value, dict)):
-            if key.lower != "state":
-                msg = "Can't set any attribute but state with a dictionary"
-                raise ValueError(msg)
-        else:
-            self._get_light_by_id(key)
-
-    def _get_light_by_id(self, lid):
-        light_id = str(lid)
-        self.logger.debug("trying to match against %s" % light_id)
-        return self.__dict__.get(light_id)
-
-    def find_new_lights(self):
-        add_light_url = self.base_uri + "/lights"
-        resp = self._req(add_light_url, None, "POST")
-        result_code, message = list(resp[0].keys()), list(resp[0].values())
-        if result_code == 'success':
-            self.logger.info(message[0]['/lights'])
-        else:
-            self.logger.error(message[0])
+#     def find_new_lights(self, dev_id=None):
+#         add_light_url = self.base_uri + "/lights"
+#         if isinstance(dev_id, list):
+#             dev_id_list = str([i for i in dev_id])
+#             body = {"deviceid": dev_id_list}
+#             resp = self._req(add_light_url, body, "POST")
+#         elif isinstance(dev_id, str):
+#             body = {"deviceid": dev_id_list}
+#             resp = self._req(add_light_url, body, "POST")
+#         elif dev_id is None:
+#             resp = self._req(add_light_url, None, "POST")
+#         result_code, message = list(resp[0].keys()), list(resp[0].values())
+#         if result_code == 'success':
+#             self.logger.info(message[0]['/lights'])
+#         else:
+#             self.logger.error(message[0])
 
     def _authorize(self):
-        auth_payload = {'devicetype': self.device_type, 'username': self.user}
-        self._req(self.create_user_url, auth_payload, "POST")
-
+        auth_payload = {'devicetype': self.device_type}
+        token = self._req(self.create_user_url, auth_payload, "POST")[0]
+        self.user = token['success']['username']
 
 if __name__ == "__main__":
     bridge_ip, user, log_level = get_args()
