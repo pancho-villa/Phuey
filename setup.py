@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from setuptools import setup
-from phuey.phuey import __version__
+from phuey import __version__
 
 
 setup(name='phuey',
